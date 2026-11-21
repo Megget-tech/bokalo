@@ -88,3 +88,10 @@ def test_login_by_email_code(client, anna):
     r = client.post(reverse("account_confirm_login_code"), {"code": code})
     assert r.status_code == 302
     assert client.get(reverse("booking:home")).status_code == 200
+
+
+def test_staff_without_member_gets_link_to_create_member(client, django_user_model):
+    u = django_user_model.objects.create_user(username="admin", email="a@example.se", is_staff=True)
+    client.force_login(u)
+    html = client.get(reverse("booking:home")).content.decode()
+    assert f"/admin/booking/member/add/?user={u.pk}" in html
