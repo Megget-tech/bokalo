@@ -1,0 +1,18 @@
+{% load tz %}Hej {{ booking.member.name }}!
+
+Din bokning är klar.
+
+{{ booking.resource.name }}
+{% if booking.resource.kind == "overnight" %}Från {{ booking.start|date:"l j F" }} kl 12:00 till {{ booking.end|date:"l j F" }} kl 11:59{% else %}{{ booking.start|date:"l j F" }} kl {{ booking.start|time:"H:i" }}–{{ booking.end|time:"H:i" }}{% endif %}
+
+Din tagg fungerar på dörren under bokad tid.
+{% if charge %}
+Avgift: {{ charge.amount|floatformat:0 }} kr – {% if charge.status == "paid" %}betald.{% else %}debiteras på avgiftsavin.{% endif %}
+{% endif %}
+Avbokning kan göras senast {{ booking.resource.cancel_hours_before }} timmar före start.
+{% if booking.resource.rules_text %}
+Ordningsregler:
+{{ booking.resource.rules_text }}
+{% endif %}
+Hälsningar
+{{ SITE_NAME }}

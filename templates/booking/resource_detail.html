@@ -3,7 +3,7 @@
 {% block content %}
 <p><a href="{% url 'booking:home' %}">← Tillbaka</a></p>
 <h1>{{ resource.name }}</h1>
-{% if resource.price_per_night and resource.kind == "overnight" %}<p>Pris: {{ resource.price_per_night|floatformat:0 }} kr per natt.</p>{% endif %}
+{% if resource.price_per_night and resource.payment_method != "none" %}<p>Pris: {{ resource.price_per_night|floatformat:0 }} kr per {% if resource.kind == "overnight" %}natt{% else %}pass{% endif %}{% if resource.payment_method == "online" %}, betalas med kort vid bokning{% else %}, debiteras på avgiftsavin{% endif %}.</p>{% endif %}
 <p class="muted">Max {{ resource.max_active_bookings }} kommande bokningar per lägenhet. Avbokning senast {{ resource.cancel_hours_before }} h före start.</p>
 
 <div class="pager">

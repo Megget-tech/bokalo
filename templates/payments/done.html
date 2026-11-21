@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block head_title %}Betalning{% endblock %}
+{% block extra_head %}{% if booking.status == "pending_payment" %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content %}
+{% if booking.status == "active" %}
+  <h1>Tack, bokningen är klar!</h1>
+  <p>{{ booking.resource.name }}, {{ booking.start|date:"l j/n" }}. En bekräftelse har skickats till din e-post.</p>
+{% elif booking.status == "pending_payment" %}
+  <h1>Betalningen behandlas…</h1>
+  <p>Sidan uppdateras automatiskt.</p>
+{% else %}
+  <h1>Bokningen är inte aktiv</h1>
+  <p>Reservationen hann gå ut. Om du har betalat återbetalas pengarna automatiskt.</p>
+{% endif %}
+<p><a href="{% url 'booking:home' %}">Till startsidan</a></p>
+{% endblock %}

@@ -22,9 +22,11 @@
           <strong>{{ b.resource.name }}</strong><br>
           {% if b.resource.kind == "slots" %}{{ b.start|date:"l j/n" }} kl {{ b.start|time:"H:i" }}–{{ b.end|time:"H:i" }}{% else %}{{ b.start|date:"j/n" }} 12:00 – {{ b.end|date:"j/n" }} 11:59 ({% if b.nights == 1 %}1 natt{% else %}{{ b.nights }} nätter{% endif %}){% endif %}
           {% if b.member and b.member != current_member %}<br><span class="muted">bokad av {{ b.member.name }}</span>{% endif %}
-          {% if b.status == "pending_payment" %}<br><span class="badge">Väntar på betalning</span>{% endif %}
+          {% if b.charge %}<br><span class="muted">{{ b.charge.amount|floatformat:0 }} kr · {% if b.charge.status == "paid" %}betald{% elif b.charge.method == "invoice" %}på avgiftsavin{% else %}ej betald{% endif %}</span>{% endif %}
+          {% if b.status == "pending_payment" %}<br><span class="badge">Väntar på betalning – hålls till {{ b.hold_expires_at|time:"H:i" }}</span>
+            <br><a class="button-link small" href="{% url 'payments:checkout' b.pk %}">Betala</a>{% endif %}
         </div>
-        <form method="post" action="{% url 'booking:cancel' b.pk %}" onsubmit="return confirm('Avboka {{ b.resource.name|escapejs }}?')">
+        <form method="post" action="{% url 'booking:cancel' b.pk %}" onsubmit="return confirm('{% if b.status == 'pending_payment' %}Släppa reservationen?{% else %}Avboka {{ b.resource.name|escapejs }}?{% endif %}')">
           {% csrf_token %}<button class="secondary">Avboka</button>
         </form>
       </li>

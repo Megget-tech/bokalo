@@ -34,3 +34,4 @@ select, input { font:inherit; padding:8px; border:1px solid var(--line); border-
 .stack { display:flex; flex-direction:column; gap:12px; margin-top:12px; }
 .stack label { display:flex; flex-direction:column; gap:4px; font-size:.9rem; }
 .errorlist { color:#b42318; padding-left:18px; }
+.button-link.small { padding:6px 12px; margin-top:6px; font-size:.9rem; }

@@ -33,7 +33,7 @@ def home(request):
         Booking.objects.holding()
         .upcoming(now)
         .filter(apartment=request.member.apartment)
-        .select_related("resource", "member")
+        .select_related("resource", "member", "charge")
     )
     return render(
         request,
@@ -141,6 +141,8 @@ def book(request, slug):
         messages.error(request, str(e))
         return redirect("booking:resource", slug=slug)
 
+    if booking.status == Booking.Status.PENDING_PAYMENT:
+        return redirect("payments:checkout", pk=booking.pk)
     start = timezone.localtime(booking.start)
     messages.success(request, f"Bokat: {resource.name} {start:%-d/%-m kl %H:%M}.")
     return redirect("booking:home")
@@ -153,9 +155,15 @@ def cancel(request, pk):
     if booking.apartment_id != request.member.apartment_id:
         raise Http404
     try:
-        services.cancel_booking(booking, by_member=request.member)
+        booking = services.cancel_booking(booking, by_member=request.member)
     except BookingError as e:
         messages.error(request, str(e))
     else:
-        messages.success(request, "Bokningen är avbokad.")
+        charge = getattr(booking, "charge", None)
+        if getattr(booking, "refund_error", None):
+            messages.warning(request, "Bokningen är avbokad, men återbetalningen kunde inte göras automatiskt. Styrelsen har fått besked.")
+        elif charge and charge.status == "refunded":
+            messages.success(request, f"Bokningen är avbokad och {charge.amount:.0f} kr återbetalas.")
+        else:
+            messages.success(request, "Bokningen är avbokad.")
     return redirect("booking:home")

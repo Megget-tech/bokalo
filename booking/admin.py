@@ -1,7 +1,15 @@
+from django import forms
 from django.contrib import admin, messages
+from django.shortcuts import redirect, render
+from django.urls import path
 
 from .models import Apartment, Booking, Member, Resource, SlotTemplate
+from .importer import import_members_csv
 from .services import cancel_booking
+
+
+class ImportForm(forms.Form):
+    file = forms.FileField(label="CSV-fil", help_text="Kolumner: lagenhet;namn;epost[;vaka_id]")
 
 admin.site.site_header = "Bokning – styrelsens admin"
 admin.site.site_title = "Bokning"
@@ -20,9 +28,34 @@ class MemberAdmin(admin.ModelAdmin):
     autocomplete_fields = ["apartment"]
     raw_id_fields = ["user"]
 
+    change_list_template = "admin/booking/member/change_list.html"
+
     @admin.display(description="e-post")
     def email(self, obj):
         return obj.user.email
+
+    def get_urls(self):
+        return [
+            path("importera/", self.admin_site.admin_view(self.import_view), name="booking_member_import"),
+        ] + super().get_urls()
+
+    def import_view(self, request):
+        if not self.has_add_permission(request):
+            return redirect("admin:booking_member_changelist")
+        form = ImportForm(request.POST or None, request.FILES or None)
+        if request.method == "POST" and form.is_valid():
+            raw = form.cleaned_data["file"].read()
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw.decode("cp1252")  # Excel på Windows
+            result = import_members_csv(text)
+            for e in result.errors:
+                messages.error(request, e)
+            messages.success(request, f"{result.created} nya och {result.updated} uppdaterade medlemmar.")
+            return redirect("admin:booking_member_changelist")
+        ctx = {**self.admin_site.each_context(request), "form": form, "title": "Importera medlemmar"}
+        return render(request, "admin/booking/member/import.html", ctx)
 
 
 class SlotTemplateInline(admin.TabularInline):

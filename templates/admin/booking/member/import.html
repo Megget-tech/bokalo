@@ -1,0 +1,9 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<p>Ladda upp en CSV-fil med rubrikraden <code>lagenhet;namn;epost;vaka_id</code> (vaka_id är frivilligt).
+Befintliga medlemmar (samma e-post) uppdateras.</p>
+<form method="post" enctype="multipart/form-data">{% csrf_token %}
+  {{ form.as_p }}
+  <input type="submit" value="Importera">
+</form>
+{% endblock %}

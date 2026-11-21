@@ -9,6 +9,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import timedelta
 
+from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
@@ -46,6 +47,14 @@ def _fail(grant, booking, message, result):
     grant.attempts += 1
     grant.last_error = message
     grant.save()
+    if grant.attempts == settings.ACCESS_ALERT_AFTER_ATTEMPTS:
+        from booking.notifications import alert_board
+
+        alert_board(
+            f"Dörrbehörighet fungerar inte: {booking}",
+            f"Bokningen {booking} har inte fått behörighet i passersystemet efter "
+            f"{grant.attempts} försök.\n\nFel: {message}\n\nSe admin → Dörrbehörigheter.",
+        )
     result.failed += 1
     result.errors.append(f"{booking}: {message}")
     log.warning("Behörighet misslyckades för %s: %s", booking, message)

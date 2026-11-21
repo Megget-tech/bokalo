@@ -17,7 +17,12 @@ automatisk dörrbehörighet i passersystemet Axema VAKA.
 | Avstämning av dörrbehörigheter (idempotent, tål fel och omstarter) | ✅ mot fejkad VAKA |
 | Medlemssynk från VAKA (nattlig) | ✅ mot fejkad VAKA |
 | Axema VAKA-koppling (`access/providers/axema.py`) | ⏳ väntar på Axemas dokumentation |
-| Avgifter, CSV-export till förvaltare, Stripe, e-postbekräftelser | ⏳ fas 2 |
+| Avgifter per lokal: ingen / avgiftsavi / online | ✅ |
+| CSV-export till förvaltaren (admin → Avgifter → åtgärd) | ✅ |
+| Onlinebetalning med Stripe (tiden hålls 30 min, automatisk återbetalning vid avbokning) | ✅ testad mot fejkad betaltjänst och Stripes signaturkontroll, ej mot riktigt Stripe-konto |
+| E-postbekräftelse med kalenderfil (.ics), avbokningsmejl | ✅ |
+| CSV-import av medlemmar (admin → Medlemmar → Importera CSV) | ✅ |
+| Larm till styrelsen när en dörrbehörighet fallerar upprepade gånger | ✅ |
 
 ## Kom igång lokalt
 
@@ -69,6 +74,31 @@ systemet skapat. Fel syns i admin under "Dörrbehörigheter".
 Taggen fungerar en inställbar marginal före och efter bokningen (per lokal).
 För övernattningsrummet är marginalen 0 så att två gäster aldrig har behörighet
 samtidigt.
+
+## Avgifter och betalning
+
+Per lokal väljs betalsätt i admin:
+
+- **Ingen avgift**
+- **Avgiftsavi**: bokningen gäller direkt. Styrelsen markerar avgifterna i admin
+  (filter "Ej exporterad"), väljer åtgärden "Exportera till avgiftsavi" och skickar
+  CSV-filen till förvaltaren. Avbokning före gränsen makulerar avgiften.
+- **Betalning online**: bokningen hålls i 30 minuter medan medlemmen betalar via
+  Stripe. Obetalda reservationer släpps automatiskt. Betalningar som kommer in
+  för sent återaktiverar bokningen om tiden är ledig, annars återbetalas de.
+  Avbokning före gränsen återbetalar automatiskt.
+
+Lokalt används en fejkad betalsida. Stripe i drift:
+
+1. Skapa ett Stripe-konto för föreningen och hämta den hemliga nyckeln.
+2. Lägg till en webhook till `https://<domän>/betalning/webhook/` med händelserna
+   `checkout.session.completed` och `checkout.session.expired`.
+3. Sätt `PAYMENT_PROVIDER`, `STRIPE_SECRET_KEY` och `STRIPE_WEBHOOK_SECRET` i `.env`.
+
+Testa först med Stripes testnycklar och `stripe listen --forward-to localhost:8000/betalning/webhook/`.
+
+Fler betaltjänster (t.ex. Swish Handel) läggs till som en ny klass i
+`payments/providers/` utan att bokningslogiken behöver ändras.
 
 ## Drift
 

@@ -77,7 +77,11 @@ class Resource(models.Model):
         "max nätter per bokning", default=3, help_text="Gäller bara övernattning."
     )
     price_per_night = models.DecimalField(
-        "pris per natt (kr)", max_digits=8, decimal_places=2, default=0
+        "pris (kr)",
+        max_digits=8,
+        decimal_places=2,
+        default=0,
+        help_text="Per natt för övernattning, per pass för fasta pass.",
     )
     payment_method = models.CharField(
         "betalning", max_length=10, choices=PaymentMethod.choices, default=PaymentMethod.NONE

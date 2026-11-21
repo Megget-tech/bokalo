@@ -2,3 +2,4 @@ Django>=5.1,<5.2
 django-allauth>=65,<66
 psycopg[binary]>=3.2,<4
 gunicorn>=23,<24
+stripe>=12,<13

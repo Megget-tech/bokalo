@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "allauth.account",
     "booking",
     "access",
+    "payments",
 ]
 
 MIDDLEWARE = [
@@ -154,3 +155,21 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
 }
+
+# --- Betalning ---------------------------------------------------------------
+# "payments.providers.stripe.StripeProvider" i drift med onlinebetalning.
+PAYMENT_PROVIDER = env("PAYMENT_PROVIDER", "payments.providers.fake.FakePaymentProvider")
+STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", "")
+# Hur länge en obetald bokning håller tiden (Stripe kräver minst 30 min).
+PAYMENT_HOLD_MINUTES = int(env("PAYMENT_HOLD_MINUTES", "30"))
+
+# --- Larm till styrelsen ------------------------------------------------------
+# Kommaseparerad lista: "Namn <e-post>,..." – får larm om dörrbehörigheter som fallerar.
+ADMINS = [
+    (a.split("<")[0].strip(), a.split("<")[-1].rstrip(">").strip())
+    for a in env("BOARD_EMAILS", "").split(",")
+    if "@" in a
+]
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+ACCESS_ALERT_AFTER_ATTEMPTS = int(env("ACCESS_ALERT_AFTER_ATTEMPTS", "3"))
