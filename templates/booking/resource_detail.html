@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block head_title %}{{ resource.name }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'booking:home' %}">← Tillbaka</a></p>
+<h1>{{ resource.name }}</h1>
+{% if resource.price_per_night and resource.kind == "overnight" %}<p>Pris: {{ resource.price_per_night|floatformat:0 }} kr per natt.</p>{% endif %}
+<p class="muted">Max {{ resource.max_active_bookings }} kommande bokningar per lägenhet. Avbokning senast {{ resource.cancel_hours_before }} h före start.</p>
+
+<div class="pager">
+  {% if offset > 0 %}<a href="?vecka={{ offset|add:-1 }}">← Föregående</a>{% else %}<span></span>{% endif %}
+  <a href="?vecka={{ offset|add:1 }}">Nästa →</a>
+</div>
+
+{% if resource.kind == "slots" %}
+  {% for row in rows %}
+    <section class="day">
+      <h3>{{ row.day|date:"l j F" }}</h3>
+      {% for s in row.slots %}
+        <div class="slot slot-{{ s.state }}">
+          <span>{{ s.slot.start|time:"H:i" }}–{{ s.slot.end|time:"H:i" }}</span>
+          {% if s.state == "free" %}
+            <form method="post" action="{% url 'booking:book' resource.slug %}">{% csrf_token %}
+              <input type="hidden" name="start" value="{{ s.slot.start|date:'c' }}">
+              <button>Boka</button>
+            </form>
+          {% elif s.state == "mine" %}<span class="badge">Din bokning</span>
+          {% elif s.state == "taken" %}<span class="muted">Upptaget</span>
+          {% else %}<span class="muted">Ej bokningsbart</span>{% endif %}
+        </div>
+      {% empty %}
+        <p class="muted">Inga pass.</p>
+      {% endfor %}
+    </section>
+  {% endfor %}
+{% else %}
+  <p>Natten gäller från <strong>12:00</strong> ankomstdagen till <strong>11:59</strong> dagen efter.</p>
+  <form class="book-overnight" method="post" action="{% url 'booking:book' resource.slug %}">{% csrf_token %}
+    <label>Ankomst
+      <select name="arrival">
+        {% for row in rows %}{% if row.state == "free" %}<option value="{{ row.day|date:'Y-m-d' }}">{{ row.day|date:"l j/n" }}</option>{% endif %}{% endfor %}
+      </select>
+    </label>
+    <label>Antal nätter
+      <select name="nights">{% for n in nights_range %}<option>{{ n }}</option>{% endfor %}</select>
+    </label>
+    <button>Boka</button>
+  </form>
+  <h3>Lediga nätter</h3>
+  {% for row in rows %}
+    <div class="slot slot-{{ row.state }}">
+      <span>{{ row.day|date:"l j/n" }}</span>
+      {% if row.state == "free" %}<span>Ledig</span>
+      {% elif row.state == "mine" %}<span class="badge">Din bokning</span>
+      {% elif row.state == "taken" %}<span class="muted">Upptagen</span>
+      {% else %}<span class="muted">–</span>{% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
+
+{% if resource.rules_text %}
+  <h2>Ordningsregler</h2>
+  <div class="rules">{{ resource.rules_text|linebreaks }}</div>
+{% endif %}
+{% endblock %}

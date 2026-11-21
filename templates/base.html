@@ -1,0 +1,29 @@
+{% load static %}<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block head_title %}{% endblock %} · {{ SITE_NAME }}</title>
+  <link rel="stylesheet" href="{% static 'style.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+{% block body %}
+  <header class="top">
+    <a class="brand" href="{% url 'booking:home' %}">{{ SITE_NAME }}</a>
+    {% if user.is_authenticated %}
+      <nav>
+        {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
+        <form method="post" action="{% url 'account_logout' %}">{% csrf_token %}<button class="link">Logga ut</button></form>
+      </nav>
+    {% endif %}
+  </header>
+  <main>
+    {% for message in messages %}
+      <div class="msg msg-{{ message.tags }}">{{ message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+{% endblock %}
+</body>
+</html>

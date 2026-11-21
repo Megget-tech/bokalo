@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block head_title %}Start{% endblock %}
+{% block content %}
+<h1>Hej {{ current_member.name|default:user.email }}</h1>
+<p class="muted">Lägenhet {{ current_member.apartment }}</p>
+
+<h2>Boka</h2>
+<ul class="cards">
+  {% for r in resources %}
+    <li><a class="card" href="{% url 'booking:resource' r.slug %}"><strong>{{ r.name }}</strong><span>{{ r.get_kind_display }}</span></a></li>
+  {% empty %}
+    <li class="muted">Inga lokaler är bokningsbara just nu.</li>
+  {% endfor %}
+</ul>
+
+<h2>Lägenhetens kommande bokningar</h2>
+{% if bookings %}
+  <ul class="list">
+    {% for b in bookings %}
+      <li>
+        <div>
+          <strong>{{ b.resource.name }}</strong><br>
+          {% if b.resource.kind == "slots" %}{{ b.start|date:"l j/n" }} kl {{ b.start|time:"H:i" }}–{{ b.end|time:"H:i" }}{% else %}{{ b.start|date:"j/n" }} 12:00 – {{ b.end|date:"j/n" }} 11:59 ({% if b.nights == 1 %}1 natt{% else %}{{ b.nights }} nätter{% endif %}){% endif %}
+          {% if b.member and b.member != current_member %}<br><span class="muted">bokad av {{ b.member.name }}</span>{% endif %}
+          {% if b.status == "pending_payment" %}<br><span class="badge">Väntar på betalning</span>{% endif %}
+        </div>
+        <form method="post" action="{% url 'booking:cancel' b.pk %}" onsubmit="return confirm('Avboka {{ b.resource.name|escapejs }}?')">
+          {% csrf_token %}<button class="secondary">Avboka</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">Inga kommande bokningar.</p>
+{% endif %}
+{% endblock %}

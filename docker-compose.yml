@@ -1,0 +1,35 @@
+# Drift: app + worker + Postgres + Caddy (automatisk HTTPS).
+services:
+  db:
+    image: postgres:17
+    env_file: .env
+    volumes: [pgdata:/var/lib/postgresql/data]
+    restart: unless-stopped
+
+  web:
+    build: .
+    env_file: .env
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2"
+    depends_on: [db]
+    restart: unless-stopped
+
+  worker:
+    build: .
+    env_file: .env
+    command: python manage.py run_worker
+    depends_on: [db, web]
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    env_file: .env
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on: [web]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:

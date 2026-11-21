@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block head_title %}Logga in{% endblock %}
+{% block content %}
+<h1>Logga in</h1>
+<p>Använd e-postadressen du har registrerad hos föreningen.</p>
+
+<p><a class="button-link" href="{% url 'account_request_login_code' %}">Skicka en inloggningskod till min e-post</a></p>
+
+<details class="pw" {% if form.errors %}open{% endif %}>
+  <summary>Logga in med lösenord</summary>
+  <form method="post" action="{% url 'account_login' %}" class="stack">
+    {% csrf_token %}
+    {{ form.non_field_errors }}
+    <label>E-post <input type="email" name="login" autocomplete="email" required value="{{ form.login.value|default:'' }}"></label>
+    <label>Lösenord <input type="password" name="password" autocomplete="current-password" required></label>
+    {% if redirect_field_value %}<input type="hidden" name="{{ redirect_field_name }}" value="{{ redirect_field_value }}">{% endif %}
+    <button type="submit">Logga in</button>
+    <a href="{% url 'account_reset_password' %}">Inget eller glömt lösenord?</a>
+  </form>
+</details>
+<p class="muted">Saknar du konto? Kontakta styrelsen.</p>
+{% endblock %}
