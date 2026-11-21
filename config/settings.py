@@ -149,10 +149,14 @@ EMAIL_PORT = int(env("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "Brf-bokning <bokning@example.se>")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL") or "Brf-bokning <bokning@example.se>"
+# Ingen SMTP-server angiven: skriv e-post till loggen i stället (t.ex. vid test på Render,
+# där inloggningskoderna då syns under Logs).
+if EMAIL_BACKEND.endswith("smtp.EmailBackend") and not EMAIL_HOST:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 # --- Föreningen --------------------------------------------------------------
-SITE_NAME = env("SITE_NAME", "Brf Bokning")
+SITE_NAME = env("SITE_NAME") or "Brf Bokning"
 
 # --- Passersystem ------------------------------------------------------------
 # Byt till "access.providers.axema.AxemaProvider" när Axema-kopplingen finns.
