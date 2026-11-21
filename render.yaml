@@ -1,0 +1,49 @@
+# Render Blueprint: New → Blueprint → välj repot. Skapar webbtjänst + Postgres i Frankfurt (EU).
+services:
+  - type: web
+    name: bokalo
+    runtime: python
+    region: frankfurt
+    plan: starter          # måste vara betald: free somnar och då stannar workern
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput
+    preDeployCommand: python manage.py migrate --noinput
+    startCommand: ./bin/start.sh
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: bokalo-db
+          property: connectionString
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: SITE_NAME
+        sync: false        # t.ex. "Brf Exempel – bokning"
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false        # egen domän, t.ex. bokning.exempel.se (onrender.com läggs till automatiskt)
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        sync: false        # https://bokning.exempel.se
+      - key: BOARD_EMAILS
+        sync: false
+      - key: EMAIL_BACKEND
+        value: django.core.mail.backends.smtp.EmailBackend
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: ACCESS_PROVIDER
+        value: access.providers.fake.FakeProvider
+      - key: PAYMENT_PROVIDER
+        value: payments.providers.fake.FakePaymentProvider
+
+databases:
+  - name: bokalo-db
+    region: frankfurt
+    plan: basic-256mb
+    databaseName: bokalo
+    user: bokalo

@@ -100,7 +100,25 @@ Testa först med Stripes testnycklar och `stripe listen --forward-to localhost:8
 Fler betaltjänster (t.ex. Swish Handel) läggs till som en ny klass i
 `payments/providers/` utan att bokningslogiken behöver ändras.
 
-## Drift
+## Drift på Render (rekommenderat)
+
+`render.yaml` beskriver allt: en webbtjänst (webb + worker i samma container via
+`bin/start.sh`) och en Postgres-databas, båda i Frankfurt (EU).
+
+1. Skapa konto på render.com och koppla GitHub.
+2. **New → Blueprint** och välj repot. Fyll i värdena Render frågar efter
+   (föreningens namn, e-post-SMTP, styrelsens e-post). Lämna dem tomma tills vidare om du bara vill testa.
+3. När tjänsten är uppe: öppna **Shell** på webbtjänsten och kör
+   `python manage.py createsuperuser` (styrelsens adminkonto).
+4. Egen domän: Settings → Custom Domains, lägg till t.ex. `bokning.exempel.se`,
+   peka DNS enligt instruktionen och lägg domänen i `DJANGO_ALLOWED_HOSTS`
+   och `https://…` i `DJANGO_CSRF_TRUSTED_ORIGINS`.
+
+Webbtjänsten måste ligga på en betald instans (Starter). På gratisnivån somnar
+tjänsten efter en stunds inaktivitet, och då stannar workern som lägger in och tar
+bort dörrbehörigheter.
+
+## Drift på egen VPS (alternativ)
 
 En liten VPS (t.ex. Hetzner, ca 50–100 kr/mån) med Docker:
 
