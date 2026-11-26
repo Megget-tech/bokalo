@@ -4,7 +4,7 @@ import logging
 from datetime import timezone as dt_timezone
 
 from django.conf import settings
-from django.core.mail import EmailMessage, mail_admins, send_mail
+from django.core.mail import EmailMessage, mail_admins
 from django.template.loader import render_to_string
 from django.utils import timezone
 
@@ -38,37 +38,68 @@ def _recipient(booking):
     return None
 
 
-def send_booking_confirmation(booking):
+def _context(booking, **extra):
+    from django.urls import reverse
+
+    from .rules import format_minutes
+
+    return {
+        "booking": booking,
+        "charge": getattr(booking, "charge", None),
+        "duration": format_minutes(booking.duration_minutes),
+        "SITE_NAME": settings.SITE_NAME,
+        "site_url": settings.SITE_URL,
+        "pay_url": settings.SITE_URL + reverse("payments:checkout", args=[booking.pk]),
+        "deadline_minutes": settings.PAYMENT_DEADLINE_MINUTES,
+        **extra,
+    }
+
+
+def _send(booking, subject, template, *, ics=False, **extra):
     to = _recipient(booking)
     if not to:
         return
-    ctx = {"booking": booking, "charge": getattr(booking, "charge", None), "SITE_NAME": settings.SITE_NAME}
     msg = EmailMessage(
-        subject=f"Bokningsbekräftelse: {booking.resource.name}",
-        body=render_to_string("booking/email/confirmation.txt", ctx),
+        subject=subject,
+        body=render_to_string(template, _context(booking, **extra)),
         to=[to],
     )
-    msg.attach("bokning.ics", _ics(booking), "text/calendar")
+    if ics:
+        msg.attach("bokning.ics", _ics(booking), "text/calendar")
     try:
         msg.send()
     except Exception:
-        log.exception("Kunde inte skicka bekräftelse för bokning %s", booking.pk)
+        log.exception("Kunde inte skicka '%s' för bokning %s", subject, booking.pk)
+
+
+def send_booking_created(booking):
+    """Direkt efter bokning: bekräftelse, eller betallänk om betalning krävs."""
+    if booking.status == booking.Status.PENDING_PAYMENT:
+        _send(booking, f"Betala din bokning: {booking.resource.name}", "booking/email/payment_required.txt", ics=True)
+    else:
+        _send(booking, f"Bokningsbekräftelse: {booking.resource.name}", "booking/email/confirmation.txt", ics=True)
+
+
+def send_payment_received(booking):
+    _send(booking, f"Betalning mottagen: {booking.resource.name}", "booking/email/payment_received.txt")
+
+
+def send_access_reminder(booking):
+    grant = getattr(booking, "access_grant", None)
+    _send(
+        booking,
+        f"Snart dags: {booking.resource.name}",
+        "booking/email/access_reminder.txt",
+        access_code=grant.access_code if grant else "",
+    )
+
+
+def send_unpaid_cancelled(booking):
+    _send(booking, f"Bokningen avbröts: {booking.resource.name}", "booking/email/unpaid_cancelled.txt")
 
 
 def send_cancellation(booking):
-    to = _recipient(booking)
-    if not to:
-        return
-    ctx = {"booking": booking, "charge": getattr(booking, "charge", None), "SITE_NAME": settings.SITE_NAME}
-    try:
-        send_mail(
-            f"Avbokad: {booking.resource.name}",
-            render_to_string("booking/email/cancellation.txt", ctx),
-            None,
-            [to],
-        )
-    except Exception:
-        log.exception("Kunde inte skicka avbokningsmejl för bokning %s", booking.pk)
+    _send(booking, f"Avbokad: {booking.resource.name}", "booking/email/cancellation.txt")
 
 
 def alert_board(subject, body):

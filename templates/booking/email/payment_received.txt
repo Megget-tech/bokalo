@@ -1,0 +1,15 @@
+{% autoescape off %}Hej {{ booking.member.name }}!
+
+Vi har tagit emot din betalning på {{ charge.amount|floatformat:"-2" }} kr. Bokningen är bekräftad.
+
+{{ booking.resource.name }}
+{% include "booking/email/_when.txt" %}
+
+Du får ett mejl med information om tillträde strax före start.
+Avbokning kan göras senast {{ booking.resource.cancel_hours_before }} timmar före start, och då återbetalas avgiften: {{ site_url }}
+{% if booking.resource.rules_text %}
+Ordningsregler:
+{{ booking.resource.rules_text }}
+{% endif %}
+Hälsningar
+{{ SITE_NAME }}{% endautoescape %}

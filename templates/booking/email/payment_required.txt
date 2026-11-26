@@ -1,0 +1,16 @@
+{% autoescape off %}Hej {{ booking.member.name }}!
+
+Tack för din bokning. Den gäller när avgiften är betald.
+
+{{ booking.resource.name }}
+{% include "booking/email/_when.txt" %}
+
+Att betala: {{ charge.amount|floatformat:"-2" }} kr
+Betala här: {{ pay_url }}
+
+Betala senast {{ booking.hold_expires_at|date:"l j F" }} kl {{ booking.hold_expires_at|time:"H:i" }} ({{ deadline_minutes }} minuter före start). Annars avbryts bokningen automatiskt och tiden blir ledig för andra.
+
+När du har betalat får du tillträde till lokalen. Information om tillträde skickas strax före start.
+
+Hälsningar
+{{ SITE_NAME }}{% endautoescape %}

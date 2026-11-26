@@ -67,7 +67,7 @@ def webhook(request):
     if event.paid:
         services.mark_paid(event.charge_id, event.payment_ref)
     else:
-        services.mark_payment_failed(event.charge_id)
+        services.on_checkout_expired(event.charge_id, event.checkout_ref)
     return HttpResponse("ok")
 
 

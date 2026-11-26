@@ -1,64 +1,105 @@
 {% extends "base.html" %}
+{% load tz %}
 {% block head_title %}{{ resource.name }}{% endblock %}
 {% block content %}
-<p><a href="{% url 'booking:home' %}">← Tillbaka</a></p>
+<p class="small"><a href="{% url 'booking:home' %}">← Alla lokaler</a></p>
 <h1>{{ resource.name }}</h1>
-{% if resource.price_per_night and resource.payment_method != "none" %}<p>Pris: {{ resource.price_per_night|floatformat:0 }} kr per {% if resource.kind == "overnight" %}natt{% else %}pass{% endif %}{% if resource.payment_method == "online" %}, betalas med kort vid bokning{% else %}, debiteras på avgiftsavin{% endif %}.</p>{% endif %}
-<p class="muted">Max {{ resource.max_active_bookings }} kommande bokningar per lägenhet. Avbokning senast {{ resource.cancel_hours_before }} h före start.</p>
-
-<div class="pager">
-  {% if offset > 0 %}<a href="?vecka={{ offset|add:-1 }}">← Föregående</a>{% else %}<span></span>{% endif %}
-  <a href="?vecka={{ offset|add:1 }}">Nästa →</a>
+{% if resource.description %}<p class="muted">{{ resource.description }}</p>{% endif %}
+<div class="facts">
+  {% if resource.kind == "flexible" %}
+    <span class="chip">{{ resource.open_time|time:"H:i" }}–{{ resource.close_time|time:"H:i" }}</span>
+  {% else %}
+    <span class="chip">12:00–11:59 per dygn</span>
+    <span class="chip">Max {{ resource.max_nights }} dygn</span>
+  {% endif %}
+  {% if resource.requires_payment %}<span class="chip">{{ resource.price|floatformat:"-2" }} kr / {% if resource.kind == "overnight" %}dygn{% else %}timme{% endif %}</span>{% endif %}
+  <span class="chip">Max {{ resource.max_active_bookings }} kommande bokningar</span>
 </div>
 
-{% if resource.kind == "slots" %}
-  {% for row in rows %}
-    <section class="day">
-      <h3>{{ row.day|date:"l j F" }}</h3>
-      {% for s in row.slots %}
-        <div class="slot slot-{{ s.state }}">
-          <span>{{ s.slot.start|time:"H:i" }}–{{ s.slot.end|time:"H:i" }}</span>
-          {% if s.state == "free" %}
-            <form method="post" action="{% url 'booking:book' resource.slug %}">{% csrf_token %}
-              <input type="hidden" name="start" value="{{ s.slot.start|date:'c' }}">
-              <button>Boka</button>
-            </form>
-          {% elif s.state == "mine" %}<span class="badge">Din bokning</span>
-          {% elif s.state == "taken" %}<span class="muted">Upptaget</span>
-          {% else %}<span class="muted">Ej bokningsbart</span>{% endif %}
-        </div>
+<section class="card" style="margin-top:16px">
+  <div class="cal-head">
+    <a class="cal-nav" href="{% if prev_month %}?manad={{ prev_month|date:'Y-m' }}{% else %}#{% endif %}" aria-label="Föregående månad" {% if not prev_month %}aria-disabled="true"{% endif %}>‹</a>
+    <h2>{{ month_title }}</h2>
+    <a class="cal-nav" href="{% if next_month %}?manad={{ next_month|date:'Y-m' }}{% else %}#{% endif %}" aria-label="Nästa månad" {% if not next_month %}aria-disabled="true"{% endif %}>›</a>
+  </div>
+  <div class="cal-grid" role="grid">
+    {% for wd in weekdays %}<div class="cal-wd">{{ wd }}</div>{% endfor %}
+    {% for week in weeks %}{% for d in week %}
+      {% if not d.in_month %}<span class="cal-day out"></span>
+      {% elif d.bookable %}<a class="cal-day {{ d.state }}{% if d.date == today %} today{% endif %}{% if d.date == selected %} selected{% endif %}" href="?datum={{ d.date|date:'Y-m-d' }}#val" aria-label="{{ d.date|date:'l j F' }}">{{ d.date.day }}<span class="dot"></span></a>
+      {% else %}<span class="cal-day {{ d.state }}{% if d.date == today %} today{% endif %}" aria-disabled="true">{{ d.date.day }}<span class="dot"></span></span>{% endif %}
+    {% endfor %}{% endfor %}
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--accent-soft)"></i>Ledigt</span>
+    <span><i style="background:var(--sand)"></i>Delvis bokat</span>
+    <span><i style="background:var(--blue-soft)"></i>Din bokning</span>
+    <span><i style="background:var(--surface-2);border:1px solid var(--line)"></i>Fullt</span>
+  </div>
+</section>
+
+{% if selected %}
+<section class="card panel" id="val">
+  <div class="panel-title">
+    <h3>{{ selected|date:"l j F"|capfirst }}</h3>
+    <a class="small" href="?manad={{ selected|date:'Y-m' }}">Stäng</a>
+  </div>
+
+  {% if resource.kind == "flexible" %}
+    <p class="muted small">Välj starttid</p>
+    <div class="times">
+      {% for s in start_times %}
+        {% with hm=s|localtime|time:"H:i" %}
+        <a class="time{% if chosen_start and s == chosen_start %} selected{% endif %}" href="?datum={{ selected|date:'Y-m-d' }}&start={{ hm }}#val">{{ hm }}</a>
+        {% endwith %}
       {% empty %}
-        <p class="muted">Inga pass.</p>
+        <p class="muted">Inga lediga tider.</p>
       {% endfor %}
-    </section>
-  {% endfor %}
-{% else %}
-  <p>Natten gäller från <strong>12:00</strong> ankomstdagen till <strong>11:59</strong> dagen efter.</p>
-  <form class="book-overnight" method="post" action="{% url 'booking:book' resource.slug %}">{% csrf_token %}
-    <label>Ankomst
-      <select name="arrival">
-        {% for row in rows %}{% if row.state == "free" %}<option value="{{ row.day|date:'Y-m-d' }}">{{ row.day|date:"l j/n" }}</option>{% endif %}{% endfor %}
-      </select>
-    </label>
-    <label>Antal nätter
-      <select name="nights">{% for n in nights_range %}<option>{{ n }}</option>{% endfor %}</select>
-    </label>
-    <button>Boka</button>
-  </form>
-  <h3>Lediga nätter</h3>
-  {% for row in rows %}
-    <div class="slot slot-{{ row.state }}">
-      <span>{{ row.day|date:"l j/n" }}</span>
-      {% if row.state == "free" %}<span>Ledig</span>
-      {% elif row.state == "mine" %}<span class="badge">Din bokning</span>
-      {% elif row.state == "taken" %}<span class="muted">Upptagen</span>
-      {% else %}<span class="muted">–</span>{% endif %}
     </div>
-  {% endfor %}
+    {% if durations %}
+      <form method="post" action="{% url 'booking:book' resource.slug %}">
+        {% csrf_token %}
+        <input type="hidden" name="date" value="{{ selected|date:'Y-m-d' }}">
+        <input type="hidden" name="start" value="{{ chosen_start|localtime|time:'H:i' }}">
+        <p class="muted small" style="margin-top:16px">Välj hur länge</p>
+        <div class="options">
+          {% for d in durations %}
+            <label class="option">
+              <input type="radio" name="duration" value="{{ d.minutes }}" {% if forloop.first %}checked{% endif %}>
+              <span class="grow"><strong>{{ d.label }}</strong> <span class="muted">· till {{ d.end|time:"H:i" }}</span></span>
+              {% if resource.requires_payment %}<span class="price">{{ d.price|floatformat:"-2" }} kr</span>{% endif %}
+            </label>
+          {% endfor %}
+        </div>
+        <button class="btn-block" style="margin-top:14px">{% if resource.pays_online %}Boka och betala{% else %}Boka{% endif %}</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p class="muted small">Ankomst kl 12:00. Välj antal dygn.</p>
+    <form method="post" action="{% url 'booking:book' resource.slug %}">
+      {% csrf_token %}
+      <input type="hidden" name="date" value="{{ selected|date:'Y-m-d' }}">
+      <div class="options">
+        {% for o in night_options %}
+          <label class="option">
+            <input type="radio" name="nights" value="{{ o.nights }}" {% if forloop.first %}checked{% endif %}>
+            <span class="grow"><strong>{{ o.nights }} dygn</strong> <span class="muted">· avresa {{ o.departure|date:"D j/n" }} 11:59</span></span>
+            {% if resource.requires_payment %}<span class="price">{{ o.price|floatformat:"-2" }} kr</span>{% endif %}
+          </label>
+        {% endfor %}
+      </div>
+      <button class="btn-block" style="margin-top:14px">{% if resource.pays_online %}Boka och betala{% else %}Boka{% endif %}</button>
+    </form>
+  {% endif %}
+
+  {% if resource.pays_online %}
+    <div class="note">Bokningen gäller när den är betald. Betala direkt eller via länken i bekräftelsemejlet, senast {{ deadline_minutes }} minuter före start. Tillträdesinformation skickas strax före start.</div>
+  {% endif %}
+</section>
 {% endif %}
 
 {% if resource.rules_text %}
   <h2>Ordningsregler</h2>
-  <div class="rules">{{ resource.rules_text|linebreaks }}</div>
+  <div class="card rules">{{ resource.rules_text }}</div>
 {% endif %}
 {% endblock %}

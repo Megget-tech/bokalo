@@ -6,6 +6,7 @@ import logging
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
@@ -19,23 +20,33 @@ log = logging.getLogger(__name__)
 
 
 def price_for(resource: Resource, start, end) -> Decimal:
-    if resource.payment_method == Resource.PaymentMethod.NONE or not resource.price_per_night:
+    if not resource.requires_payment:
         return Decimal(0)
     if resource.kind == Resource.Kind.OVERNIGHT:
-        units = (timezone.localtime(end).date() - timezone.localtime(start).date()).days
+        units = Decimal((timezone.localtime(end).date() - timezone.localtime(start).date()).days)
     else:
-        units = 1
-    return resource.price_per_night * max(units, 1)
+        units = Decimal(int((end - start).total_seconds() // 60)) / Decimal(60)  # timmar
+    return (resource.price * max(units, Decimal(0))).quantize(Decimal("0.01"))
+
+
+def payment_deadline(start):
+    """Senaste tidpunkt för betalning: ett visst antal minuter före start."""
+    return start - timedelta(minutes=settings.PAYMENT_DEADLINE_MINUTES)
+
+
+def min_notice_minutes() -> int:
+    """Hur långt före start en betald bokning senast får göras (för att hinna betala)."""
+    return settings.PAYMENT_DEADLINE_MINUTES + settings.PAYMENT_MIN_TIME_TO_PAY_MINUTES
 
 
 def create_charge(booking: Booking, amount: Decimal) -> Charge:
     resource = booking.resource
     local = timezone.localtime(booking.start)
     if resource.kind == Resource.Kind.OVERNIGHT:
-        what = f"{resource.name} {local:%Y-%m-%d}, {booking.nights} natt{'er' if booking.nights != 1 else ''}"
-        what = what.replace("natter", "nätter")
+        what = f"{resource.name} {local:%Y-%m-%d}, {booking.nights} dygn"
     else:
-        what = f"{resource.name} {local:%Y-%m-%d %H:%M}"
+        end_local = timezone.localtime(booking.end)
+        what = f"{resource.name} {local:%Y-%m-%d %H:%M}–{end_local:%H:%M}"
     online = resource.payment_method == Resource.PaymentMethod.ONLINE
     return Charge.objects.create(
         booking=booking,
@@ -46,27 +57,32 @@ def create_charge(booking: Booking, amount: Decimal) -> Charge:
     )
 
 
-def get_checkout_url(charge: Charge, *, success_url: str, cancel_url: str) -> str:
+def get_checkout_url(charge: Charge, *, success_url: str, cancel_url: str, now=None) -> str:
     """Skapa (eller återanvänd) en betalsession för en öppen onlineavgift."""
+    now = now or timezone.now()
     if charge.status != Charge.Status.OPEN or charge.method != Charge.Method.ONLINE:
         raise PaymentError("Avgiften går inte att betala online.")
-    if charge.checkout_url:
+    if charge.checkout_url and charge.checkout_expires_at and charge.checkout_expires_at > now + timedelta(minutes=5):
         return charge.checkout_url
     provider = get_payment_provider()
     email = charge.booking.member.user.email if charge.booking.member else ""
+    # Betalsidan ska helst sluta gälla vid betalningsgränsen. Stripe kräver 30 min–24 h.
+    deadline = charge.booking.hold_expires_at or (now + timedelta(hours=24))
+    expires_at = min(max(deadline, now + timedelta(minutes=30)), now + timedelta(hours=23, minutes=55))
     checkout = provider.create_checkout(
-        charge, success_url=success_url, cancel_url=cancel_url, customer_email=email
+        charge, success_url=success_url, cancel_url=cancel_url, customer_email=email, expires_at=expires_at
     )
     charge.provider = provider.name
     charge.checkout_ref = checkout.ref
     charge.checkout_url = checkout.url
-    charge.save(update_fields=["provider", "checkout_ref", "checkout_url"])
+    charge.checkout_expires_at = expires_at
+    charge.save(update_fields=["provider", "checkout_ref", "checkout_url", "checkout_expires_at"])
     return checkout.url
 
 
 def mark_paid(charge_id: int, payment_ref: str, now=None) -> Charge:
     """Hantera en lyckad betalning. Idempotent (webhooks kan komma flera gånger)."""
-    from booking.notifications import send_booking_confirmation
+    from booking.notifications import send_payment_received
 
     now = now or timezone.now()
     refund_needed = False
@@ -85,7 +101,7 @@ def mark_paid(charge_id: int, payment_ref: str, now=None) -> Charge:
             booking.status = Booking.Status.ACTIVE
             booking.hold_expires_at = None
             booking.save(update_fields=["status", "hold_expires_at"])
-            transaction.on_commit(lambda: send_booking_confirmation(booking))
+            transaction.on_commit(lambda: send_payment_received(booking))
         elif booking.status == Booking.Status.CANCELLED:
             # Betalningen kom efter att reservationen släppts. Återaktivera om tiden
             # fortfarande är ledig, annars återbetala.
@@ -102,20 +118,19 @@ def mark_paid(charge_id: int, payment_ref: str, now=None) -> Charge:
                 booking.cancelled_at = None
                 booking.hold_expires_at = None
                 booking.save(update_fields=["status", "cancelled_at", "hold_expires_at"])
-                transaction.on_commit(lambda: send_booking_confirmation(booking))
+                transaction.on_commit(lambda: send_payment_received(booking))
     if refund_needed:
         log.warning("Betalning för avbokad bokning %s, återbetalar", booking.pk)
         refund(charge)
     return charge
 
 
-def mark_payment_failed(charge_id: int, now=None) -> None:
-    """Betalsessionen gick ut eller avbröts: släpp reservationen."""
-    from booking.services import cancel_booking
-
-    charge = Charge.objects.select_related("booking").get(pk=charge_id)
-    if charge.status == Charge.Status.OPEN and charge.booking.status == Booking.Status.PENDING_PAYMENT:
-        cancel_booking(charge.booking, now=now)
+def on_checkout_expired(charge_id: int, checkout_ref: str = "") -> None:
+    """En betalsession gick ut. Bokningen ligger kvar till betalningsgränsen; nästa
+    klick på betallänken skapar en ny session."""
+    Charge.objects.filter(pk=charge_id, status=Charge.Status.OPEN, checkout_ref=checkout_ref).update(
+        checkout_ref="", checkout_url="", checkout_expires_at=None
+    )
 
 
 def refund(charge: Charge) -> Charge:
@@ -179,7 +194,3 @@ def export_invoice_csv(charges, now=None) -> str:
     return buf.getvalue()
 
 
-def hold_expiry(now):
-    from django.conf import settings
-
-    return now + timedelta(minutes=settings.PAYMENT_HOLD_MINUTES)

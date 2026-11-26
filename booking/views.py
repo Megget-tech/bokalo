@@ -1,13 +1,18 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from functools import wraps
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from payments import services as payments
+
+from . import calendar as cal
 from . import rules, services
 from .models import Booking, Resource
 from .rules import BookingError
@@ -42,109 +47,118 @@ def home(request):
     )
 
 
-def _week_offset(request):
+def _parse_month(value, today):
     try:
-        return max(0, min(int(request.GET.get("vecka", 0)), 52))
-    except ValueError:
-        return 0
+        y, m = (int(x) for x in value.split("-"))
+        return date(y, m, 1)
+    except (AttributeError, ValueError):
+        return today.replace(day=1)
+
+
+def _parse_date(value):
+    try:
+        return date.fromisoformat(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _add_months(d, n):
+    m = d.month - 1 + n
+    return date(d.year + m // 12, m % 12 + 1, 1)
 
 
 @member_required
 def resource_detail(request, slug):
     resource = get_object_or_404(Resource, slug=slug, active=True)
-    offset = _week_offset(request)
     now = timezone.now()
     today = timezone.localdate()
-    first = today + timedelta(days=7 * offset)
-    horizon = now + timedelta(days=resource.max_days_ahead)
+    selected = _parse_date(request.GET.get("datum"))
+    month = _parse_month(request.GET.get("manad"), today) if not selected else selected.replace(day=1)
+    first_month = today.replace(day=1)
+    last_month = (today + timedelta(days=resource.max_days_ahead)).replace(day=1)
+    month = min(max(month, first_month), last_month)
 
-    if resource.kind == Resource.Kind.SLOTS:
-        days = [first + timedelta(days=i) for i in range(7)]
-        period_start = datetime.combine(days[0], datetime.min.time(), rules.local_tz())
-        period_end = period_start + timedelta(days=8)
-    else:
-        days = [first + timedelta(days=i) for i in range(14)]
-        period_start = rules.overnight_period(days[0], 1).start
-        period_end = rules.overnight_period(days[-1], 1).end
+    weeks = cal.month_days(resource, request.member.apartment_id, month.year, month.month, now)
+    days = {d.date: d for w in weeks for d in w}
+    if selected and not (selected in days and days[selected].bookable):
+        selected = None
 
-    taken = list(
-        Booking.objects.holding()
-        .filter(resource=resource, start__lt=period_end, end__gt=period_start)
-        .only("start", "end", "apartment_id")
-    )
+    ctx = {
+        "resource": resource,
+        "weeks": weeks,
+        "weekdays": cal.WEEKDAYS_SHORT,
+        "month_title": cal.month_title(month.year, month.month),
+        "prev_month": _add_months(month, -1) if month > first_month else None,
+        "next_month": _add_months(month, 1) if month < last_month else None,
+        "selected": selected,
+        "today": today,
+        "min_notice": payments.min_notice_minutes() if resource.pays_online else 0,
+        "deadline_minutes": settings.PAYMENT_DEADLINE_MINUTES,
+    }
 
-    def state_for(start, end):
-        for b in taken:
-            if rules.overlaps(start, end, b.start, b.end):
-                return "mine" if b.apartment_id == request.member.apartment_id else "taken"
-        if start <= now or start > horizon:
-            return "unavailable"
-        return "free"
+    if selected:
+        earliest = cal.earliest_start(resource, now)
+        if resource.kind == Resource.Kind.FLEXIBLE:
+            bounds = rules.day_bounds(resource, selected)
+            busy = cal.holding_bookings(resource, bounds.start, bounds.end)
+            starts = rules.flexible_start_times(resource, selected, busy, earliest)
+            ctx["start_times"] = starts
+            chosen = request.GET.get("start")
+            chosen_start = next((s for s in starts if f"{timezone.localtime(s):%H:%M}" == chosen), None)
+            if chosen_start:
+                ctx["chosen_start"] = chosen_start
+                ctx["durations"] = [
+                    {
+                        "minutes": m,
+                        "label": rules.format_minutes(m),
+                        "end": chosen_start + timedelta(minutes=m),
+                        "price": payments.price_for(resource, chosen_start, chosen_start + timedelta(minutes=m)),
+                    }
+                    for m in rules.flexible_durations(resource, chosen_start, busy)
+                ]
+        else:
+            last = rules.overnight_period(selected, resource.max_nights)
+            busy = cal.holding_bookings(resource, last.start, last.end)
+            options = []
+            for n in rules.possible_nights(resource, selected, busy):
+                p = rules.overnight_period(selected, n)
+                options.append({"nights": n, "departure": p.end, "price": payments.price_for(resource, p.start, p.end)})
+            ctx["night_options"] = options
 
-    if resource.kind == Resource.Kind.SLOTS:
-        templates = list(resource.slot_templates.all())
-        rows = [
-            {
-                "day": d,
-                "slots": [
-                    {"slot": s, "state": state_for(s.start, s.end)}
-                    for s in rules.slots_for_date(templates, d)
-                ],
-            }
-            for d in days
-        ]
-    else:
-        rows = []
-        for d in days:
-            p = rules.overnight_period(d, 1)
-            rows.append({"day": d, "state": state_for(p.start, p.end)})
-
-    return render(
-        request,
-        "booking/resource_detail.html",
-        {
-            "resource": resource,
-            "rows": rows,
-            "offset": offset,
-            "nights_range": range(1, resource.max_nights + 1),
-        },
-    )
+    return render(request, "booking/resource_detail.html", ctx)
 
 
 @require_POST
 @member_required
 def book(request, slug):
     resource = get_object_or_404(Resource, slug=slug, active=True)
+    back = redirect("booking:resource", slug=slug)
     try:
-        if resource.kind == Resource.Kind.SLOTS:
-            start = datetime.fromisoformat(request.POST["start"])
-            day = rules.timezone_local(start).date()
-            slot = next(
-                (s for s in rules.slots_for_date(resource.slot_templates.all(), day) if s.start == start),
-                None,
-            )
-            if slot is None:
-                raise BookingError("Det valda passet finns inte.")
-            booking = services.create_booking(
-                member=request.member, resource=resource, start=slot.start, end=slot.end
+        day = date.fromisoformat(request.POST["date"])
+        back = redirect(f"{reverse('booking:resource', args=[slug])}?datum={day.isoformat()}#val")
+        if resource.kind == Resource.Kind.FLEXIBLE:
+            hh, mm = (int(x) for x in request.POST["start"].split(":"))
+            start = datetime.combine(day, time(hh, mm), rules.local_tz())
+            booking = services.create_flexible_booking(
+                member=request.member, resource=resource, start=start,
+                duration_minutes=int(request.POST["duration"]),
             )
         else:
-            arrival = date.fromisoformat(request.POST["arrival"])
-            nights = int(request.POST.get("nights", 1))
             booking = services.create_overnight_booking(
-                member=request.member, resource=resource, arrival=arrival, nights=nights
+                member=request.member, resource=resource, arrival=day,
+                nights=int(request.POST.get("nights", 1)),
             )
     except (KeyError, ValueError):
         messages.error(request, "Ogiltig förfrågan.")
-        return redirect("booking:resource", slug=slug)
+        return back
     except BookingError as e:
         messages.error(request, str(e))
-        return redirect("booking:resource", slug=slug)
+        return back
 
     if booking.status == Booking.Status.PENDING_PAYMENT:
         return redirect("payments:checkout", pk=booking.pk)
     start = timezone.localtime(booking.start)
-    messages.success(request, f"Bokat: {resource.name} {start:%-d/%-m kl %H:%M}.")
+    messages.success(request, f"Bokat: {resource.name} {start:%-d/%-m} kl {start:%H:%M}. En bekräftelse har skickats till din e-post.")
     return redirect("booking:home")
 
 

@@ -129,13 +129,14 @@ def reconcile(provider=None, now=None) -> Result:
         try:
             if grant.state == AccessGrant.State.GRANTED and grant.provider_ref:
                 provider.revoke(grant.provider_ref)  # tiderna har ändrats
-            ref = provider.grant(
+            result_grant = provider.grant(
                 booking.member.vaka_user_ref, booking.resource.door_ref, valid_from, valid_to
             )
         except ProviderError as e:
             _fail(grant, booking, str(e), result)
             continue
-        grant.provider_ref = ref
+        grant.provider_ref = result_grant.ref
+        grant.access_code = result_grant.code
         grant.state = AccessGrant.State.GRANTED
         grant.valid_from, grant.valid_to = valid_from, valid_to
         grant.last_error = ""

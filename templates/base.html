@@ -3,14 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f6f4ef">
   <title>{% block head_title %}{% endblock %} · {{ SITE_NAME }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'style.css' %}">
   {% block extra_head %}{% endblock %}
 </head>
 <body>
 {% block body %}
   <header class="top">
-    <a class="brand" href="{% url 'booking:home' %}">{{ SITE_NAME }}</a>
+    <a class="brand" href="{% url 'booking:home' %}"><span class="brand-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 4l9 6.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg></span>{{ SITE_NAME }}</a>
     {% if user.is_authenticated %}
       <nav>
         {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
@@ -20,7 +24,7 @@
   </header>
   <main>
     {% for message in messages %}
-      <div class="msg msg-{{ message.tags }}">{{ message }}</div>
+      <div class="msg msg-{{ message.tags }}" role="status">{{ message }}</div>
     {% endfor %}
     {% block content %}{% endblock %}
   </main>

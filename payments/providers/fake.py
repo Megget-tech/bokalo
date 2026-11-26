@@ -12,12 +12,15 @@ class FakePaymentProvider(PaymentProvider):
     name = "fake"
     refunds: list = []
 
-    def create_checkout(self, charge, *, success_url, cancel_url, customer_email=""):
+    def create_checkout(self, charge, *, success_url, cancel_url, customer_email="", expires_at=None):
         return Checkout(ref=f"fake_cs_{charge.pk}", url=reverse("payments:fake_checkout", args=[charge.pk]))
 
     def parse_webhook(self, payload, headers):
         data = json.loads(payload)
-        return PaymentEvent(int(data["charge_id"]), paid=data["paid"], payment_ref=data.get("ref", ""))
+        return PaymentEvent(
+            int(data["charge_id"]), paid=data["paid"], payment_ref=data.get("ref", ""),
+            checkout_ref=data.get("checkout_ref", ""),
+        )
 
     def refund(self, charge):
         FakePaymentProvider.refunds.append(charge.pk)

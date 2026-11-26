@@ -1,0 +1,1 @@
+{% if booking.resource.kind == "overnight" %}Ankomst {{ booking.start|date:"l j F" }} kl 12:00, avresa {{ booking.end|date:"l j F" }} kl 11:59 ({{ booking.nights }} dygn){% else %}{{ booking.start|date:"l j F" }} kl {{ booking.start|time:"H:i" }}–{{ booking.end|time:"H:i" }} ({{ duration }}){% endif %}

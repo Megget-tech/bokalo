@@ -18,15 +18,18 @@ class Checkout:
 @dataclass(frozen=True)
 class PaymentEvent:
     charge_id: int
-    paid: bool  # True = betald, False = avbruten/utgången
+    paid: bool  # True = betald, False = betalsessionen gick ut
     payment_ref: str = ""  # referens som behövs för återbetalning
+    checkout_ref: str = ""  # vilken betalsession händelsen gäller
 
 
 class PaymentProvider(ABC):
     name: str = ""
 
     @abstractmethod
-    def create_checkout(self, charge, *, success_url: str, cancel_url: str, customer_email: str = "") -> Checkout:
+    def create_checkout(
+        self, charge, *, success_url: str, cancel_url: str, customer_email: str = "", expires_at=None
+    ) -> Checkout:
         ...
 
     @abstractmethod

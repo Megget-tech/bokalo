@@ -5,8 +5,6 @@ registrera i Stripe: https://<domän>/betalning/webhook/
 Händelser: checkout.session.completed, checkout.session.expired.
 """
 
-import time
-
 import stripe
 from django.conf import settings
 
@@ -21,7 +19,7 @@ class StripeProvider(PaymentProvider):
             raise PaymentError("STRIPE_SECRET_KEY saknas")
         self.client = stripe.StripeClient(settings.STRIPE_SECRET_KEY)
 
-    def create_checkout(self, charge, *, success_url, cancel_url, customer_email=""):
+    def create_checkout(self, charge, *, success_url, cancel_url, customer_email="", expires_at=None):
         params = {
             "mode": "payment",
             "line_items": [
@@ -38,10 +36,11 @@ class StripeProvider(PaymentProvider):
             "metadata": {"charge_id": str(charge.pk)},
             "success_url": success_url,
             "cancel_url": cancel_url,
-            # Stripe kräver minst 30 minuter; samma tid som bokningen hålls.
-            "expires_at": int(time.time()) + max(30, settings.PAYMENT_HOLD_MINUTES) * 60,
             "locale": "sv",
+            # Betalsätt (kort, Apple Pay, Google Pay m.fl.) styrs i Stripes dashboard.
         }
+        if expires_at:
+            params["expires_at"] = int(expires_at.timestamp())
         if customer_email:
             params["customer_email"] = customer_email
         try:
@@ -64,7 +63,7 @@ class StripeProvider(PaymentProvider):
         if event["type"] == "checkout.session.completed" and obj.get("payment_status") == "paid":
             return PaymentEvent(int(charge_id), paid=True, payment_ref=obj.get("payment_intent") or "")
         if event["type"] == "checkout.session.expired":
-            return PaymentEvent(int(charge_id), paid=False)
+            return PaymentEvent(int(charge_id), paid=False, checkout_ref=obj.get("id", ""))
         return None
 
     def refund(self, charge):

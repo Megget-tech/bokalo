@@ -1,0 +1,18 @@
+{% autoescape off %}Hej {{ booking.member.name }}!
+
+Snart är det dags för din bokning.
+
+{{ booking.resource.name }}
+{% include "booking/email/_when.txt" %}
+{% if access_code %}
+Din kod till dörren: {{ access_code }}
+
+Koden gäller från {{ booking.access_grant.valid_from|time:"H:i" }}{% if booking.resource.kind == "overnight" %} {{ booking.access_grant.valid_from|date:"j/n" }}{% endif %} till {{ booking.access_grant.valid_to|time:"H:i" }}{% if booking.resource.kind == "overnight" %} {{ booking.access_grant.valid_to|date:"j/n" }}{% endif %}.
+{% else %}
+Din tagg är aktiverad för dörren under bokad tid.
+{% endif %}{% if booking.resource.rules_text %}
+Kom ihåg:
+{{ booking.resource.rules_text }}
+{% endif %}
+Hälsningar
+{{ SITE_NAME }}{% endautoescape %}

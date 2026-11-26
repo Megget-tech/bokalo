@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from booking.models import Booking
-from booking.rules import slots_for_date
+from booking.rules import local_tz
 
 
 @pytest.fixture
@@ -16,9 +16,17 @@ def client_anna(client, anna):
     return client
 
 
-def next_free_slot(resource):
+def tomorrow_at(hour=19):
+    from datetime import datetime, time
     day = timezone.localdate() + timedelta(days=1)
-    return slots_for_date(resource.slot_templates.all(), day)[0]
+    return datetime.combine(day, time(hour), local_tz())
+
+
+def post_flexible(client, start, minutes=120):
+    return client.post(
+        reverse("booking:book", args=["bastu"]),
+        {"date": start.date().isoformat(), "start": f"{start:%H:%M}", "duration": str(minutes)},
+    )
 
 
 def test_login_required(client, db):
@@ -39,15 +47,26 @@ def test_signup_closed(client, db):
     assert not get_user_model().objects.filter(email="new@example.se").exists()
 
 
-def test_book_and_cancel_slot(client_anna, sauna):
-    s = next_free_slot(sauna)
-    page = client_anna.get(reverse("booking:resource", args=["bastu"]))
-    assert page.status_code == 200 and "Boka" in page.content.decode()
+def test_month_calendar_then_times_then_durations(client_anna, sauna):
+    start = tomorrow_at(19)
+    url = reverse("booking:resource", args=["bastu"])
+    page = client_anna.get(url).content.decode()
+    assert 'class="cal-grid"' in page and "Välj starttid" not in page  # bara kalendern först
 
-    r = client_anna.post(reverse("booking:book", args=["bastu"]), {"start": s.start.isoformat()})
+    page = client_anna.get(url, {"datum": start.date().isoformat()}).content.decode()
+    assert "Välj starttid" in page and ">19:00<" in page and "Välj hur länge" not in page
+
+    page = client_anna.get(url, {"datum": start.date().isoformat(), "start": "19:00"}).content.decode()
+    assert "Välj hur länge" in page
+    assert ">1 h<" in page and ">3 h<" in page and "till 22:00" in page
+
+
+def test_book_and_cancel_flexible(client_anna, sauna):
+    start = tomorrow_at(19)
+    r = post_flexible(client_anna, start, 90)
     assert r.status_code == 302
     b = Booking.objects.get()
-    assert (b.start, b.end) == (s.start, s.end)
+    assert (b.start, b.duration_minutes) == (start, 90)
 
     home = client_anna.get(reverse("booking:home")).content.decode()
     assert "Bastu" in home
@@ -59,25 +78,27 @@ def test_book_and_cancel_slot(client_anna, sauna):
 
 def test_book_overnight(client_anna, guestroom):
     arrival = timezone.localdate() + timedelta(days=5)
-    client_anna.post(reverse("booking:book", args=["overnattning"]), {"arrival": arrival.isoformat(), "nights": "2"})
+    client_anna.post(reverse("booking:book", args=["overnattning"]), {"date": arrival.isoformat(), "nights": "2"})
     b = Booking.objects.get()
     assert b.nights == 2
 
 
 def test_cannot_cancel_other_apartments_booking(client, bertil, anna, sauna):
     from booking import services
-    s = next_free_slot(sauna)
-    b = services.create_booking(member=bertil, resource=sauna, start=s.start, end=s.end)
+    s = tomorrow_at(19)
+    b = services.create_flexible_booking(member=bertil, resource=sauna, start=s, duration_minutes=60)
     client.force_login(anna.user)
     assert client.post(reverse("booking:cancel", args=[b.pk])).status_code == 404
 
 
-def test_other_apartment_name_not_shown(client_anna, bertil, sauna):
+def test_other_apartment_booking_hides_times_and_name(client_anna, bertil, sauna):
     from booking import services
-    s = next_free_slot(sauna)
-    services.create_booking(member=bertil, resource=sauna, start=s.start, end=s.end)
-    html = client_anna.get(reverse("booking:resource", args=["bastu"])).content.decode()
-    assert "Upptaget" in html and "Bertil" not in html
+    s = tomorrow_at(19)
+    services.create_flexible_booking(member=bertil, resource=sauna, start=s, duration_minutes=180)
+    html = client_anna.get(reverse("booking:resource", args=["bastu"]), {"datum": s.date().isoformat()}).content.decode()
+    assert ">18:00<" in html and ">19:00<" not in html and ">21:00<" not in html
+    assert "Bertil" not in html
+    assert 'cal-day partial' in html
 
 
 def test_login_by_email_code(client, anna):

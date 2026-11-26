@@ -13,6 +13,7 @@ class AccessGrant(models.Model):
         "booking.Booking", on_delete=models.CASCADE, related_name="access_grant"
     )
     provider_ref = models.CharField(max_length=200, blank=True)
+    access_code = models.CharField("tillträdeskod", max_length=20, blank=True)
     state = models.CharField(max_length=10, choices=State.choices)
     valid_from = models.DateTimeField(null=True, blank=True)
     valid_to = models.DateTimeField(null=True, blank=True)
@@ -54,6 +55,7 @@ class FakeDoorGrant(models.Model):
     door_ref = models.CharField(max_length=100)
     valid_from = models.DateTimeField()
     valid_to = models.DateTimeField()
+    code = models.CharField(max_length=20, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

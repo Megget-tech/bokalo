@@ -1,5 +1,5 @@
-"""Bakgrundsworker: släpper obetalda reservationer, stämmer av dörrbehörigheter
-varje minut och synkar medlemmar en gång per natt."""
+"""Bakgrundsworker: avbryter obetalda bokningar vid betalningsgränsen, stämmer av
+dörrbehörigheter, skickar påminnelser varje minut och synkar medlemmar på natten."""
 
 import logging
 import time
@@ -11,7 +11,7 @@ from django.utils import timezone
 
 from access.reconcile import reconcile
 from access.sync import sync_members
-from booking.services import release_expired_holds
+from booking.services import release_expired_holds, send_due_reminders
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +31,9 @@ class Command(BaseCommand):
                 result = reconcile()
                 if result.granted or result.revoked or result.errors:
                     log.info("Avstämning: %s", result)
+                reminders = send_due_reminders()
+                if reminders:
+                    log.info("Skickade %s påminnelser", reminders)
                 now = timezone.localtime()
                 if now.hour == settings.MEMBER_SYNC_HOUR and last_sync_date != now.date():
                     sync_members()

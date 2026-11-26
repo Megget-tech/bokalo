@@ -5,7 +5,7 @@
 {% if user.is_staff %}
   <p>Du är inloggad som administratör, men ditt konto är inte kopplat till någon lägenhet.
   För att själv kunna boka behöver du ett medlemskonto.</p>
-  <p><a class="button-link" href="{% url 'admin:booking_member_add' %}?user={{ user.pk }}&amp;name={{ user.get_full_name|default:user.username|urlencode }}">Skapa medlemskonto för mig</a></p>
+  <p><a class="btn" href="{% url 'admin:booking_member_add' %}?user={{ user.pk }}&amp;name={{ user.get_full_name|default:user.username|urlencode }}">Skapa medlemskonto för mig</a></p>
   <p class="muted">Välj lägenhet (eller skapa en med +) och ange ett VAKA-id, t.ex. TEST1 vid test.</p>
 {% else %}
   <p>Ditt konto är inte kopplat till en lägenhet i föreningen. Kontakta styrelsen.</p>

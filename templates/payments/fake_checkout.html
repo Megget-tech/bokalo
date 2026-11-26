@@ -1,11 +1,13 @@
 {% extends "base.html" %}
-{% block head_title %}Testbetalning{% endblock %}
-{% block content %}
+{% block head_title %}Testbetalning</div>
+{% endblock %}
+{% block content %}<div class="card" style="margin-top:24px">
 <h1>Testbetalning</h1>
 <p class="muted">Fejkad betaltjänst för utveckling. I drift skickas man till Stripe.</p>
-<p><strong>{{ charge.description }}</strong><br>{{ charge.amount|floatformat:0 }} kr</p>
+<p><strong>{{ charge.description }}</strong><br>{{ charge.amount|floatformat:"-2" }} kr</p>
 <form method="post" class="stack">{% csrf_token %}
-  <button name="action" value="pay">Betala {{ charge.amount|floatformat:0 }} kr</button>
+  <button name="action" value="pay">Betala {{ charge.amount|floatformat:"-2" }} kr</button>
   <button name="action" value="cancel" class="secondary">Avbryt</button>
 </form>
+</div>
 {% endblock %}

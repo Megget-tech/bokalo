@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.contrib.auth import get_user_model
 
-from booking.models import Apartment, Member, Resource, SlotTemplate
+from booking.models import Apartment, Member, Resource
 
 TZ = ZoneInfo("Europe/Stockholm")
 
@@ -45,14 +45,12 @@ def cecilia(db):  # samma lägenhet som Bertil
 
 @pytest.fixture
 def sauna(db):
-    r = Resource.objects.create(
-        name="Bastu", slug="bastu", kind=Resource.Kind.SLOTS, door_ref="DOOR-BASTU",
+    return Resource.objects.create(
+        name="Bastu", slug="bastu", kind=Resource.Kind.FLEXIBLE, door_ref="DOOR-BASTU",
+        open_time=time(7), close_time=time(22),
+        min_duration_minutes=60, max_duration_minutes=180, step_minutes=30,
         max_active_bookings=2, max_days_ahead=14, cancel_hours_before=2,
     )
-    for d in range(7):
-        for s, e in [(time(7), time(10)), (time(10), time(13)), (time(19), time(22))]:
-            SlotTemplate.objects.create(resource=r, weekday=d, start_time=s, end_time=e)
-    return r
 
 
 @pytest.fixture
@@ -60,7 +58,7 @@ def guestroom(db):
     return Resource.objects.create(
         name="Övernattningsrum", slug="overnattning", kind=Resource.Kind.OVERNIGHT,
         door_ref="DOOR-GAST", max_active_bookings=1, max_days_ahead=90,
-        cancel_hours_before=48, max_nights=3, price_per_night=200,
+        cancel_hours_before=48, max_nights=3, price=200,
     )
 
 

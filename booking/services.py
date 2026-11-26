@@ -1,6 +1,8 @@
 """Bokningstjänster: skapar och avbokar bokningar under lås, så att två personer
 inte kan boka samma tid samtidigt."""
 
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -37,11 +39,7 @@ def create_booking(*, member: Member, resource: Resource, start, end, now=None) 
     with transaction.atomic():
         # Lås lokalen så att samtidiga bokningar av samma lokal köas.
         resource = Resource.objects.select_for_update().get(pk=resource.pk)
-        valid_slots = None
-        if resource.kind == Resource.Kind.SLOTS:
-            day = rules.timezone_local(start).date()
-            valid_slots = rules.slots_for_date(resource.slot_templates.all(), day)
-
+        online = resource.pays_online
         rules.check_new_booking(
             resource=resource,
             start=start,
@@ -49,25 +47,29 @@ def create_booking(*, member: Member, resource: Resource, start, end, now=None) 
             now=now,
             active_count_for_apartment=active_count_for_apartment(resource, member.apartment, now),
             has_overlap=_overlapping(resource, start, end).exists(),
-            valid_slots=valid_slots,
+            min_notice_minutes=payments.min_notice_minutes() if online else 0,
         )
         amount = payments.price_for(resource, start, end)
-        online = amount > 0 and resource.payment_method == Resource.PaymentMethod.ONLINE
+        online = online and amount > 0
         booking = Booking.objects.create(
             resource=resource,
             member=member,
             apartment=member.apartment,
             start=start,
             end=end,
-            # Onlinebetalning: tiden hålls en stund medan medlemmen betalar.
+            # Onlinebetalning: tiden hålls fram till betalningsgränsen före start.
             status=Booking.Status.PENDING_PAYMENT if online else Booking.Status.ACTIVE,
-            hold_expires_at=payments.hold_expiry(now) if online else None,
+            hold_expires_at=payments.payment_deadline(start) if online else None,
         )
         if amount > 0:
             payments.create_charge(booking, amount)
-        if booking.status == Booking.Status.ACTIVE:
-            transaction.on_commit(lambda: notifications.send_booking_confirmation(booking))
+        transaction.on_commit(lambda: notifications.send_booking_created(booking))
         return booking
+
+
+def create_flexible_booking(*, member, resource, start, duration_minutes, now=None) -> Booking:
+    end = start + timedelta(minutes=int(duration_minutes))
+    return create_booking(member=member, resource=resource, start=start, end=end, now=now)
 
 
 def create_overnight_booking(*, member, resource, arrival, nights, now=None) -> Booking:
@@ -112,5 +114,34 @@ def release_expired_holds(now=None) -> int:
     count = 0
     for booking in expired:
         cancel_booking(booking, now=now)
+        notifications.send_unpaid_cancelled(booking)
         count += 1
+    return count
+
+
+def send_due_reminders(now=None) -> int:
+    """Skicka påminnelse med tillträdesinformation strax före start (efter betalning).
+
+    Kräver att behörigheten är inlagd i passersystemet (så att koden finns)."""
+    from django.conf import settings
+
+    from access.models import AccessGrant
+
+    now = now or timezone.now()
+    due = Booking.objects.filter(
+        status=Booking.Status.ACTIVE,
+        reminder_sent_at__isnull=True,
+        start__lte=now + timedelta(minutes=settings.REMINDER_MINUTES_BEFORE),
+        end__gt=now,
+        access_grant__state=AccessGrant.State.GRANTED,
+    ).select_related("resource", "member__user", "access_grant")
+    count = 0
+    for booking in due:
+        # Markera först så att en krasch inte ger dubbla mejl.
+        updated = Booking.objects.filter(pk=booking.pk, reminder_sent_at__isnull=True).update(
+            reminder_sent_at=now
+        )
+        if updated:
+            notifications.send_access_reminder(booking)
+            count += 1
     return count

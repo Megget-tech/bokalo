@@ -1,9 +1,9 @@
-Hej {{ booking.member.name }}!
+{% autoescape off %}Hej {{ booking.member.name }}!
 
 Din bokning av {{ booking.resource.name }} {{ booking.start|date:"l j F" }} kl {{ booking.start|time:"H:i" }} är avbokad.
 {% if charge %}{% if charge.status == "refunded" %}
-Avgiften på {{ charge.amount|floatformat:0 }} kr återbetalas till ditt kort.{% elif charge.status == "void" %}
-Avgiften på {{ charge.amount|floatformat:0 }} kr är struken.{% endif %}{% endif %}
+Avgiften på {{ charge.amount|floatformat:"-2" }} kr återbetalas till ditt kort.{% elif charge.status == "void" %}
+Avgiften på {{ charge.amount|floatformat:"-2" }} kr är struken.{% endif %}{% endif %}
 
 Hälsningar
-{{ SITE_NAME }}
+{{ SITE_NAME }}{% endautoescape %}

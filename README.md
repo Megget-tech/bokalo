@@ -7,22 +7,31 @@ automatisk dörrbehörighet i passersystemet Axema VAKA.
 - När man bokar får taggen behörighet till lokalens dörr under den bokade tiden.
 - Styrelsen sköter lokaler, pass, regler och medlemmar i adminpanelen (`/admin/`).
 
-## Status
+## Funktioner
+
+- **Bastu (flexibel tid):** styrelsen ställer in öppettider, kortaste och längsta
+  bokning samt intervall (t.ex. 1–3 h i steg om 30 min). Pris per timme.
+- **Övernattningsrum:** bokas per dygn (12:00–11:59), med ställbart max antal dygn. Pris per dygn.
+- **Månadskalender:** medlemmen ser först en månadskalender (ledigt / delvis bokat /
+  egen bokning / fullt). Ett klick på en dag visar lediga starttider och längder.
+- **Betalning före tillträde (Stripe):** bokningen hålls tills betalning sker, senast
+  60 minuter före start. Betallänk skickas i bekräftelsemejlet. Obetalda bokningar
+  avbryts automatiskt vid gränsen. Behörigheten i passersystemet läggs in först
+  efter betalning.
+- **Påminnelse med tillträdeskod** 60 minuter före start (kod från passersystemet;
+  om VAKA inte ger någon kod står det att taggen är aktiverad).
+- Alternativt betalsätt: avgiftsavi med CSV-export till förvaltaren, eller ingen avgift.
+- Inloggning med engångskod via e-post (eller lösenord). Ingen fri registrering.
+- Avstämning mot passersystemet varje minut, medlemssynk varje natt, larm till styrelsen vid fel.
 
 | Del | Status |
 |---|---|
-| Bokning av fasta pass (bastu) och övernattning 12:00–11:59 | ✅ |
-| Regler: max aktiva bokningar per lägenhet, hur långt fram, avbokningsgräns, max nätter | ✅ |
-| Inloggning (kod via e-post / lösenord), ingen fri registrering | ✅ |
-| Avstämning av dörrbehörigheter (idempotent, tål fel och omstarter) | ✅ mot fejkad VAKA |
-| Medlemssynk från VAKA (nattlig) | ✅ mot fejkad VAKA |
+| Allt ovan | ✅ testat mot fejkad VAKA och fejkad betaltjänst |
+| Stripe | ✅ signaturkontroll och anrop testade utan nätverk, ej mot riktigt konto |
 | Axema VAKA-koppling (`access/providers/axema.py`) | ⏳ väntar på Axemas dokumentation |
-| Avgifter per lokal: ingen / avgiftsavi / online | ✅ |
-| CSV-export till förvaltaren (admin → Avgifter → åtgärd) | ✅ |
-| Onlinebetalning med Stripe (tiden hålls 30 min, automatisk återbetalning vid avbokning) | ✅ testad mot fejkad betaltjänst och Stripes signaturkontroll, ej mot riktigt Stripe-konto |
-| E-postbekräftelse med kalenderfil (.ics), avbokningsmejl | ✅ |
-| CSV-import av medlemmar (admin → Medlemmar → Importera CSV) | ✅ |
-| Larm till styrelsen när en dörrbehörighet fallerar upprepade gånger | ✅ |
+
+Tider som kan ändras via miljövariabler: `PAYMENT_DEADLINE_MINUTES` (60),
+`PAYMENT_MIN_TIME_TO_PAY_MINUTES` (15) och `REMINDER_MINUTES_BEFORE` (60).
 
 ## Kom igång lokalt
 
@@ -100,23 +109,30 @@ Testa först med Stripes testnycklar och `stripe listen --forward-to localhost:8
 Fler betaltjänster (t.ex. Swish Handel) läggs till som en ny klass i
 `payments/providers/` utan att bokningslogiken behöver ändras.
 
-## Drift på Render (rekommenderat)
+## Drift på Railway (rekommenderat)
 
-`render.yaml` beskriver allt: en webbtjänst (webb + worker i samma container via
-`bin/start.sh`) och en Postgres-databas, båda i Frankfurt (EU).
+`railway.json` och `Dockerfile` beskriver bygget. Allt körs i en tjänst via
+`bin/start.sh`: databasmigrering, bakgrundsworkern och webbservern (en process med
+trådar för att hålla nere minnet).
 
-1. Skapa konto på render.com och koppla GitHub.
-2. **New → Blueprint** och välj repot. Fyll i värdena Render frågar efter
-   (föreningens namn, e-post-SMTP, styrelsens e-post). Lämna dem tomma tills vidare om du bara vill testa.
-3. När tjänsten är uppe: öppna **Shell** på webbtjänsten och kör
-   `python manage.py createsuperuser` (styrelsens adminkonto).
-4. Egen domän: Settings → Custom Domains, lägg till t.ex. `bokning.exempel.se`,
-   peka DNS enligt instruktionen och lägg domänen i `DJANGO_ALLOWED_HOSTS`
-   och `https://…` i `DJANGO_CSRF_TRUSTED_ORIGINS`.
+1. Skapa ett projekt på railway.com och välj **Deploy from GitHub repo** → `bokalo`.
+2. Lägg till en databas: **+ New → Database → PostgreSQL**.
+3. På webbtjänsten, under **Variables**, lägg till:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
+   - `DJANGO_SECRET_KEY` = en lång slumpsträng
+   - `DJANGO_DEBUG` = `false`
+   - `SITE_NAME` = t.ex. `Brf Solgläntan – bokning`
+4. Under **Settings → Networking**, välj **Generate Domain** (eller lägg till egen
+   domän, t.ex. `bokning.brfnamn.se`, och peka DNS hos Simply enligt Railways instruktion).
+   Med egen domän: sätt även `DJANGO_ALLOWED_HOSTS` och `DJANGO_CSRF_TRUSTED_ORIGINS`
+   (`https://bokning.brfnamn.se`) och `SITE_URL` (`https://bokning.brfnamn.se`).
+5. Välj region i EU (t.ex. Amsterdam) under **Settings → Region**.
+6. När tjänsten är uppe: kör `python manage.py createsuperuser` via
+   **railway ssh** (eller Railway CLI) och logga in på `/admin/`.
+7. Sätt en **utgiftsgräns** under Workspace → Usage.
 
-Webbtjänsten måste ligga på en betald instans (Starter). På gratisnivån somnar
-tjänsten efter en stunds inaktivitet, och då stannar workern som lägger in och tar
-bort dörrbehörigheter.
+För test går det bra att låta e-postvariablerna vara tomma: då skrivs mejlen
+(även inloggningskoder) till loggen under **Deployments → Logs**.
 
 ## Drift på egen VPS (alternativ)
 

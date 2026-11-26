@@ -1,0 +1,8 @@
+{% autoescape off %}Hej {{ booking.member.name }}!
+
+Din bokning av {{ booking.resource.name }} {{ booking.start|date:"l j F" }} kl {{ booking.start|time:"H:i" }} har avbrutits eftersom betalningen inte kom in senast {{ deadline_minutes }} minuter före start. Tiden är nu ledig för andra.
+
+Om du har betalat i sista stund återbetalas pengarna automatiskt om tiden hunnit bokas av någon annan.
+
+Hälsningar
+{{ SITE_NAME }}{% endautoescape %}

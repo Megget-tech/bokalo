@@ -30,10 +30,28 @@ def test_cancelled_slot_can_be_rebooked(anna, bertil, sauna):
     services.create_booking(member=bertil, resource=sauna, start=start, end=end, now=NOW)
 
 
-def test_non_template_slot_rejected(anna, sauna):
-    start, end = slot(1, 15)
-    with pytest.raises(BookingError, match="passet finns inte"):
-        services.create_booking(member=anna, resource=sauna, start=start, end=end, now=NOW)
+def test_flexible_booking_rules_enforced(anna, sauna):
+    start, _ = slot(1, 15)
+    for s, minutes, msg in [
+        (start + timedelta(minutes=15), 60, "steg om 30"),
+        (start, 45, "steg om 30"),
+        (start, 30, "mellan 1 h och 3 h"),
+        (start, 210, "mellan 1 h och 3 h"),
+        (start.replace(hour=21), 90, "mellan 07:00 och 22:00"),
+        (start.replace(hour=6), 60, "mellan 07:00 och 22:00"),
+    ]:
+        with pytest.raises(BookingError, match=msg):
+            services.create_flexible_booking(member=anna, resource=sauna, start=s, duration_minutes=minutes, now=NOW)
+
+
+def test_flexible_booking_any_length_on_grid(anna, bertil, sauna):
+    start, _ = slot(1, 15)
+    a = services.create_flexible_booking(member=anna, resource=sauna, start=start + timedelta(minutes=30), duration_minutes=90, now=NOW)
+    assert a.duration_minutes == 90
+    # direkt efter (16:00) går bra, överlapp (15:30 med Annas 15:30–17:00) går inte
+    services.create_flexible_booking(member=bertil, resource=sauna, start=a.end, duration_minutes=60, now=NOW)
+    with pytest.raises(BookingError, match="redan bokad"):
+        services.create_flexible_booking(member=bertil, resource=sauna, start=start, duration_minutes=60, now=NOW)
 
 
 def test_max_active_counts_per_apartment(bertil, cecilia, sauna):

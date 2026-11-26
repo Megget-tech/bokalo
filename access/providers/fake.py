@@ -1,9 +1,10 @@
 """Fejkad leverantör som sparar "VAKA-data" i databasen. Används tills Axemas API finns."""
 
 import logging
+import secrets
 
 from ..models import FakeDoorGrant, FakeVakaUser
-from .base import AccessProvider, ProviderError, ProviderGrant, ProviderUser
+from .base import AccessProvider, GrantResult, ProviderError, ProviderGrant, ProviderUser
 
 log = logging.getLogger(__name__)
 
@@ -27,10 +28,11 @@ class FakeProvider(AccessProvider):
     def grant(self, user_ref, door_ref, valid_from, valid_to):
         self._check()
         g = FakeDoorGrant.objects.create(
-            user_ref=user_ref, door_ref=door_ref, valid_from=valid_from, valid_to=valid_to
+            user_ref=user_ref, door_ref=door_ref, valid_from=valid_from, valid_to=valid_to,
+            code=f"{secrets.randbelow(10**6):06d}",
         )
         log.info("FAKE VAKA: behörighet %s för %s till %s %s–%s", g.pk, user_ref, door_ref, valid_from, valid_to)
-        return str(g.pk)
+        return GrantResult(ref=str(g.pk), code=g.code)
 
     def revoke(self, grant_ref):
         self._check()

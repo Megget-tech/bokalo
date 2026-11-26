@@ -22,6 +22,13 @@ class ProviderUser:
 
 
 @dataclass(frozen=True)
+class GrantResult:
+    ref: str
+    #: Tillfällig kod för dörren, om passersystemet ger en (annars gäller taggen).
+    code: str = ""
+
+
+@dataclass(frozen=True)
 class ProviderGrant:
     ref: str
     user_ref: str
@@ -41,8 +48,8 @@ class AccessProvider(ABC):
         """Alla personer i passersystemet (för medlemsimport)."""
 
     @abstractmethod
-    def grant(self, user_ref: str, door_ref: str, valid_from: datetime, valid_to: datetime) -> str:
-        """Ge en person behörighet till en dörr. Returnerar en referens till behörigheten."""
+    def grant(self, user_ref: str, door_ref: str, valid_from: datetime, valid_to: datetime) -> GrantResult:
+        """Ge en person behörighet till en dörr. Returnerar referens och ev. tillträdeskod."""
 
     @abstractmethod
     def revoke(self, grant_ref: str) -> None:

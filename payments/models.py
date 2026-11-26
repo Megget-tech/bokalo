@@ -28,6 +28,7 @@ class Charge(models.Model):
     provider_ref = models.CharField("referens hos betaltjänst", max_length=200, blank=True)
     checkout_ref = models.CharField(max_length=200, blank=True)
     checkout_url = models.URLField(max_length=1000, blank=True)
+    checkout_expires_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField("skapad", auto_now_add=True)
     paid_at = models.DateTimeField("betald", null=True, blank=True)
     exported_at = models.DateTimeField("exporterad", null=True, blank=True)
@@ -38,7 +39,7 @@ class Charge(models.Model):
         ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.description} – {self.amount:.0f} kr ({self.get_status_display()})"
+        return f"{self.description} – {self.amount:.2f} kr ({self.get_status_display()})"
 
     @property
     def amount_ore(self) -> int:

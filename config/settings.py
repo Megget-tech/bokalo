@@ -21,10 +21,13 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", "dev-insecure-change-me")
 DEBUG = env_bool("DJANGO_DEBUG", True)
 ALLOWED_HOSTS = [h for h in env("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",") if h]
 CSRF_TRUSTED_ORIGINS = [o for o in env("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if o]
-# Render sätter värdnamnet automatiskt (t.ex. bokalo.onrender.com).
-if env("RENDER_EXTERNAL_HOSTNAME"):
-    ALLOWED_HOSTS.append(env("RENDER_EXTERNAL_HOSTNAME"))
-    CSRF_TRUSTED_ORIGINS.append(f"https://{env('RENDER_EXTERNAL_HOSTNAME')}")
+# Hostingtjänsterna sätter det publika värdnamnet automatiskt.
+PUBLIC_HOSTNAME = env("RAILWAY_PUBLIC_DOMAIN") or env("RENDER_EXTERNAL_HOSTNAME")
+if PUBLIC_HOSTNAME:
+    ALLOWED_HOSTS.append(PUBLIC_HOSTNAME)
+    CSRF_TRUSTED_ORIGINS.append(f"https://{PUBLIC_HOSTNAME}")
+if env("RAILWAY_ENVIRONMENT"):
+    ALLOWED_HOSTS.append("healthcheck.railway.app")  # Railways hälsokontroll
 
 INSTALLED_APPS = [
     "django.contrib.admin",
@@ -182,8 +185,14 @@ LOGGING = {
 PAYMENT_PROVIDER = env("PAYMENT_PROVIDER", "payments.providers.fake.FakePaymentProvider")
 STRIPE_SECRET_KEY = env("STRIPE_SECRET_KEY", "")
 STRIPE_WEBHOOK_SECRET = env("STRIPE_WEBHOOK_SECRET", "")
-# Hur länge en obetald bokning håller tiden (Stripe kräver minst 30 min).
-PAYMENT_HOLD_MINUTES = int(env("PAYMENT_HOLD_MINUTES", "30"))
+# Betalning måste ske senast så här många minuter före start, annars avbryts bokningen.
+PAYMENT_DEADLINE_MINUTES = int(env("PAYMENT_DEADLINE_MINUTES", "60"))
+# En betald bokning måste göras minst så här mycket före betalningsgränsen.
+PAYMENT_MIN_TIME_TO_PAY_MINUTES = int(env("PAYMENT_MIN_TIME_TO_PAY_MINUTES", "15"))
+# Påminnelse med tillträdesinformation skickas så här många minuter före start.
+REMINDER_MINUTES_BEFORE = int(env("REMINDER_MINUTES_BEFORE", "60"))
+# Publik adress, används i länkar i e-post. Sätts automatiskt på Railway/Render.
+SITE_URL = (env("SITE_URL") or (f"https://{PUBLIC_HOSTNAME}" if PUBLIC_HOSTNAME else "http://localhost:8000")).rstrip("/")
 
 # --- Larm till styrelsen ------------------------------------------------------
 # Kommaseparerad lista: "Namn <e-post>,..." – får larm om dörrbehörigheter som fallerar.

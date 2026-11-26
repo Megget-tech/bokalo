@@ -53,7 +53,7 @@ def test_invoice_booking_is_active_with_open_charge(anna, invoice_room, django_c
     assert b.status == Booking.Status.ACTIVE
     c = b.charge
     assert (c.amount, c.method, c.status) == (Decimal("400"), Charge.Method.INVOICE, Charge.Status.OPEN)
-    assert "2 nätter" in c.description
+    assert "2 dygn" in c.description
     assert len(mail.outbox) == 1
     msg = mail.outbox[0]
     assert "avgiftsavin" in msg.body
@@ -90,7 +90,7 @@ def test_export_csv_marks_exported(anna, bertil, invoice_room):
 def test_online_booking_is_held_until_paid(anna, online_room):
     b = book(anna, online_room)
     assert b.status == Booking.Status.PENDING_PAYMENT
-    assert b.hold_expires_at == NOW + timedelta(minutes=30)
+    assert b.hold_expires_at == b.start - timedelta(minutes=60)
     assert b.charge.method == Charge.Method.ONLINE
 
 
@@ -109,23 +109,26 @@ def test_mark_paid_activates_and_is_idempotent(anna, online_room, django_capture
     assert b.status == Booking.Status.ACTIVE and b.hold_expires_at is None
     c = Charge.objects.get()
     assert c.status == Charge.Status.PAID and c.provider_ref == "pi_1"
-    assert len(mail.outbox) == 1 and "betald" in mail.outbox[0].body
+    assert [m.subject for m in mail.outbox] == ["Betalning mottagen: Övernattningsrum"]
 
 
-def test_expired_hold_releases_booking_and_voids_charge(anna, online_room):
+def test_unpaid_booking_cancelled_at_deadline(anna, online_room):
     b = book(anna, online_room)
-    assert services.release_expired_holds(now=NOW + timedelta(minutes=31)) == 1
+    deadline = b.start - timedelta(minutes=60)
+    assert services.release_expired_holds(now=deadline - timedelta(minutes=1)) == 0
+    assert services.release_expired_holds(now=deadline + timedelta(minutes=1)) == 1
     b.refresh_from_db()
     assert b.status == Booking.Status.CANCELLED
     assert Charge.objects.get().status == Charge.Status.VOID
-    assert mail.outbox == []  # ingen avbokningsmejl för en obetald reservation
+    assert [m.subject for m in mail.outbox] == ["Bokningen avbröts: Övernattningsrum"]
 
 
 def test_late_payment_reactivates_if_still_free(anna, online_room):
     b = book(anna, online_room)
-    services.release_expired_holds(now=NOW + timedelta(minutes=31))
+    late = b.hold_expires_at + timedelta(minutes=1)
+    services.release_expired_holds(now=late)
     assert Charge.objects.get().status == Charge.Status.VOID
-    pay.mark_paid(b.charge.pk, "pi_late", now=NOW + timedelta(minutes=32))
+    pay.mark_paid(b.charge.pk, "pi_late", now=late + timedelta(minutes=1))
     b.refresh_from_db()
     assert b.status == Booking.Status.ACTIVE
     assert FakePaymentProvider.refunds == []
@@ -133,11 +136,12 @@ def test_late_payment_reactivates_if_still_free(anna, online_room):
 
 def test_late_payment_refunded_if_slot_taken(anna, bertil, online_room):
     b = book(anna, online_room)
-    later = NOW + timedelta(minutes=31)
+    later = b.hold_expires_at + timedelta(minutes=1)
     services.release_expired_holds(now=later)
+    # någon annan tog tiden (styrelsen, utan avgift)
     online_room.payment_method = Resource.PaymentMethod.NONE
     online_room.save()
-    book(bertil, online_room, now=later)  # någon annan tog tiden
+    book(bertil, online_room, now=NOW)
     pay.mark_paid(b.charge.pk, "pi_late", now=later)
     b.refresh_from_db()
     assert b.status == Booking.Status.CANCELLED
@@ -170,11 +174,15 @@ def test_member_can_release_pending_hold_close_to_start(anna, online_room):
     assert b.status == Booking.Status.CANCELLED
 
 
-def test_payment_failed_event_releases_hold(anna, online_room):
+def test_expired_checkout_keeps_booking_and_allows_new_session(anna, online_room):
     b = book(anna, online_room)
-    pay.mark_payment_failed(b.charge.pk, now=NOW)
+    url1 = pay.get_checkout_url(b.charge, success_url="s", cancel_url="c", now=NOW)
+    b.charge.refresh_from_db()
+    pay.on_checkout_expired(b.charge.pk, b.charge.checkout_ref)
     b.refresh_from_db()
-    assert b.status == Booking.Status.CANCELLED
+    assert b.status == Booking.Status.PENDING_PAYMENT
+    assert Charge.objects.get().checkout_url == ""
+    assert pay.get_checkout_url(Charge.objects.get(), success_url="s", cancel_url="c", now=NOW) == url1
 
 
 # --- Vyer ---------------------------------------------------------------------------
@@ -184,7 +192,7 @@ def test_full_online_flow_in_views(client, anna, online_room):
     from django.utils import timezone
     client.force_login(anna.user)
     arrival = timezone.localdate() + timedelta(days=5)
-    r = client.post(reverse("booking:book", args=["overnattning"]), {"arrival": arrival.isoformat(), "nights": "1"})
+    r = client.post(reverse("booking:book", args=["overnattning"]), {"date": arrival.isoformat(), "nights": "1"})
     b = Booking.objects.get()
     assert r["Location"] == reverse("payments:checkout", args=[b.pk])
     r = client.get(r["Location"])

@@ -3,7 +3,7 @@ from django.contrib import admin, messages
 from django.shortcuts import redirect, render
 from django.urls import path
 
-from .models import Apartment, Booking, Member, Resource, SlotTemplate
+from .models import Apartment, Booking, Member, Resource
 from .importer import import_members_csv
 from .services import cancel_booking
 
@@ -58,16 +58,24 @@ class MemberAdmin(admin.ModelAdmin):
         return render(request, "admin/booking/member/import.html", ctx)
 
 
-class SlotTemplateInline(admin.TabularInline):
-    model = SlotTemplate
-    extra = 1
-
-
 @admin.register(Resource)
 class ResourceAdmin(admin.ModelAdmin):
-    list_display = ["name", "kind", "door_ref", "max_active_bookings", "payment_method", "active"]
+    list_display = ["name", "kind", "door_ref", "price", "payment_method", "active"]
     prepopulated_fields = {"slug": ["name"]}
-    inlines = [SlotTemplateInline]
+    fieldsets = [
+        (None, {"fields": ["name", "slug", "kind", "description", "active"]}),
+        (
+            "Flexibel bokningstid",
+            {
+                "fields": [("open_time", "close_time"), ("min_duration_minutes", "max_duration_minutes", "step_minutes")],
+                "description": "Gäller lokaler med flexibel bokningstid, t.ex. bastun.",
+            },
+        ),
+        ("Övernattning", {"fields": ["max_nights"], "description": "Gäller övernattningsrum (12:00–11:59 per dygn)."}),
+        ("Regler", {"fields": ["max_active_bookings", "max_days_ahead", "cancel_hours_before", "rules_text"]}),
+        ("Avgift", {"fields": ["price", "payment_method"]}),
+        ("Passersystem", {"fields": ["door_ref", ("access_lead_minutes", "access_grace_minutes")]}),
+    ]
 
 
 @admin.register(Booking)
@@ -77,7 +85,7 @@ class BookingAdmin(admin.ModelAdmin):
     date_hierarchy = "start"
     search_fields = ["apartment__number", "member__name"]
     actions = ["cancel_selected"]
-    readonly_fields = ["created_at", "cancelled_at"]
+    readonly_fields = ["created_at", "cancelled_at", "reminder_sent_at"]
 
     @admin.display(description="dörr")
     def access_state(self, obj):
